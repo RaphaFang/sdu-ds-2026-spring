@@ -1,0 +1,27 @@
+Person = {
+Id:number, Name:string, Address:string, Hobby:string
+2211, "Alice", "9 Oak Rd", "photography"
+2211, "Alice", "9 Oak Rd", "hiking"
+3344, "David", "42 Hill St", "cycling"
+5566, "Emma", "18 River Ave", "photography"
+7788, "Liam", "6 Cedar Blvd", "cooking"
+}
+
+Courses = {
+Id:number, course:string
+1025, "Art"
+1027, "Math"
+}
+
+Teachers = {
+T_Id:number, Name:string, subject:string
+206, "Mike", "Art"
+309, "John", "Math"
+}
+
+New_Person = {
+Id:number, Name:string, Address:string, Hobby:string
+3344, "David", "42 Hill St", "cycling"
+8899, "Noah", "18 Maple St", "swimming"
+9900, "Olivia", "3 Birch Rd", "hiking"
+}
