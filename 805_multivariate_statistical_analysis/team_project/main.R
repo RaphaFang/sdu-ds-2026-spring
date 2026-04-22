@@ -1,25 +1,28 @@
 # ==============================================================================
-# PREPARATION: Setup Parallel Processing
+# Parallel Processing, it should work on windows env as well
 # ==============================================================================
+install.packages("future.apply")
+library(future.apply)
 library(parallel)
 
 num_cores <- detectCores() - 2 
-print(paste("Using", num_cores, "cores for parallel processing!"))
+plan(multisession, workers = num_cores) 
+print(paste("Using", nbrOfWorkers(), "cores for parallel processing."))
 
 approximate_null_distribution_fast <- function(expr_gene, inds, geneset, iters=1000, p=1) {
-  evids_list <- mclapply(1:iters, function(i) {
+  evids_list <- future_lapply(1:iters, function(i) {
     p1 = sample(inds)
     res = rank_genes(expr_gene, p1)
     res2 = compute_enrichment_score(res$diff, geneset)
     return(res2$ES_max)
-  }, mc.cores = num_cores)
+  }, future.seed = TRUE)
   
   evids <- unlist(evids_list)
   return(evids)
 }
 
 # ==============================================================================
-# MAIN SETUP
+# STEP 0: MAIN SETUP, and load data
 # ==============================================================================
 setwd('/Users/fangsiyu/Desktop/sdu-2026-code/805_multivariate_statistical_analysis/team_project')
 library(car)
@@ -28,65 +31,51 @@ source('hotelling.R')
 source('GSEA_functions.R')
 source('dsk805utils.R')
 source('lottery.R')
-
-genetic_lottery(c("ossch25", "ajash25", "sifan25"))
-
-lottery_result <- c(
-  "HALLMARK_ESTROGEN_RESPONSE_EARLY",
-  "HALLMARK_ALLOGRAFT_REJECTION",
-  "HALLMARK_DNA_REPAIR",
-  "HALLMARK_PI3K_AKT_MTOR_SIGNALING",
-  "HALLMARK_HEME_METABOLISM"
-)
-
-# ==============================================================================
-# STEP 1: Load Data & Prepare Gene Ranking
-# ==============================================================================
 expr_gene <- readRDS("gene_expressions.RDS") # col -> patient, row -> all genes' score
 group_inds <- readRDS("group.RDS") # the no_relapse / relapse result
 hml_all <- readRDS("HML.RDS") # all the pathway and which genes build the pathway
 
-group_inds_logical <- (group_inds == "relapse") 
-ranked_result <- rank_genes(expr_gene, group_inds_logical) # nothing but re-order
+genetic_lottery(c("ossch25", "ajash25", "sifan25"))
+lottery_result <- c("HALLMARK_ESTROGEN_RESPONSE_EARLY", "HALLMARK_ALLOGRAFT_REJECTION", "HALLMARK_DNA_REPAIR", "HALLMARK_PI3K_AKT_MTOR_SIGNALING", "HALLMARK_HEME_METABOLISM")
+my_5_pathway <- hml_all[lottery_result] # extract the 5 pathway we need from hml_all
 
-diff_scores <- ranked_result$diff
-ordered_expr <- ranked_result$genes
-
-my_genesets <- hml_all[lottery_result] # extract the 5 we need from hml_all
 
 # ==============================================================================
-# STEP 2: Calculate Enrichment Score (ES) & Null Distribution
+# STEP 1: GSEA_functions part
 # ==============================================================================
-current_geneset_genes <- my_genesets[[lottery_result[4]]] # weird R, u need to use [[]] to un-wrap my_genesets to get value, which my_genesets is similar to dict in py.
+group_inds_logical <- (group_inds == "relapse") # we have to turn it into T/F list
+ranked_result <- rank_genes(expr_gene, group_inds_logical) # re-order base on the activeness they have in "relapse group"
+diff_scores <- ranked_result[["diff"]] # weird R, u need to use [[]] to un-wrap and "only get the value"
+ordered_expr <- ranked_result[["genes"]]
 
+current_geneset_genes <- my_5_pathway[[lottery_result[4]]] 
 
-es_result <- compute_enrichment_score(diff_scores, current_geneset_genes)
+es_result <- compute_enrichment_score(diff_scores, current_geneset_genes) # calculate how the pathway we pick is matched with all the genes order score
 print(paste("Pathway:", lottery_result[4], "- Max ES:", es_result$ES_max))
 
-null_dist <- approximate_null_distribution_fast(expr_gene, group_inds_logical, current_geneset_genes, iters = 1000)
-actual_es <- es_result$ES_max
-gsea_pvalue <- sum(abs(null_dist) >= abs(actual_es)) / length(null_dist)
+null_dist <- approximate_null_distribution_fast(expr_gene, group_inds_logical, current_geneset_genes, iters = 1000) # generate 1000 random es score
+actual_es <- es_result[["ES_max"]]
+gsea_pvalue <- sum(abs(null_dist) >= abs(actual_es)) / length(null_dist) 
+# compare random es with actual_es, find the ratio that's bigger than the score we actual got, how significant the actual_es is.
 
 print(paste("GSEA p-value:", gsea_pvalue))
-# Plot GSEA heatmap
+
+
+png(paste0(lottery_result[4], "_heatmap.png"), width = 1000, height = 800, res = 100)
 plot_gsea_heatmap(ordered_expr, group_inds_logical)
+dev.off()
 
 # ==============================================================================
-# STEP 3: Hotelling's T^2 Test
+# STEP 2: T2 Test, 2 group, muilti measurement
 # ==============================================================================
-# Filter valid genes present in the expression matrix
-valid_genes <- intersect(current_geneset_genes, rownames(expr_gene))
+valid_genes <- intersect(current_geneset_genes, rownames(expr_gene)) # find the intersection of both, and filter-out the genes not in current pathway 
+pathway_data_table <- t(expr_gene[valid_genes, ]) # base on valid_genes, find the row in the expr_gene table, and T
+pathway_data_transformed <- apply(pathway_data_table, 2, yj_transform) # cuz we're doing T2, we have to make sure force the data to be normally distributed.
 
-# Transpose expression matrix for valid genes
-pathway_data <- t(expr_gene[valid_genes, ])
+group1_data <- pathway_data_transformed[group_inds_logical, ]
+group2_data <- pathway_data_transformed[!group_inds_logical, ]
 
-# Split patients into two groups (relapse vs. no-relapse)
-group1_data <- pathway_data[group_inds_logical, ]
-group2_data <- pathway_data[!group_inds_logical, ]
-
-# Run two-sample Hotelling's T^2 test
 t2_result <- two_sample_test(group1_data, group2_data)
-
 print(paste("T2 p-value  :", t2_result$pvalue))
 
 
@@ -105,8 +94,8 @@ print(paste("T2 p-value  :", t2_result$pvalue))
 # T2 p-value  : 0.00219744831903657
 
 # Pathway: HALLMARK_PI3K_AKT_MTOR_SIGNALING - Max ES: -0.335329068599293
-# GSEA p-value: 0.06
-# T2 p-value  : 0.00219532700196945
+# GSEA p-value: 0.055
+# T2 p-value  : 0.00335721145328016
 
 # HALLMARK_HEME_METABOLISM - Max ES: -0.234261609394692
 # GSEA p-value: 0.237
