@@ -63,7 +63,7 @@ pathway_analysis <- function(pathway_name) {
 
 
   png(paste0(pathway_name, "_heatmap.png"), width = 1000, height = 800, res = 100)
-  plot_gsea_heatmap(ordered_expr, group_inds_logical)
+  plot_gsea_heatmap(ordered_expr[intersect(current_geneset_genes, rownames(ordered_expr)),], group_inds_logical) # have to write in this super nasty way, with intersect(), otherwise it'll have error
   dev.off()
 
   # ==============================================================================
@@ -87,21 +87,21 @@ all_results <- lapply(lottery_result, pathway_analysis)
 # Result
 # ==============================================================================
 # Pathway: HALLMARK_ESTROGEN_RESPONSE_EARLY - Max ES: 0.24259005075277
-# GSEA p-value: 0.571
+# GSEA p-value: 0.591
 # T2 p-value  : 0.00100231611126955
 
 # Pathway: HALLMARK_ALLOGRAFT_REJECTION - Max ES: -0.639618114384972
-# GSEA p-value: 0.005
+# GSEA p-value: 0.006
 # T2 p-value  : 0.00288645443744473
 
 # Pathway: HALLMARK_DNA_REPAIR - Max ES: 0.354455074572819
-# GSEA p-value: 0.073
+# GSEA p-value: 0.065
 # T2 p-value  : 0.000288397715678568
 
 # Pathway: HALLMARK_PI3K_AKT_MTOR_SIGNALING - Max ES: -0.335329068599293
-# GSEA p-value: 0.054
+# GSEA p-value: 0.038
 # T2 p-value  : 0.00335721145328016
 
 # Pathway: HALLMARK_HEME_METABOLISM - Max ES: -0.234261609394692
-# GSEA p-value: 0.227
+# GSEA p-value: 0.24
 # T2 p-value  : 0.0341202511393577
