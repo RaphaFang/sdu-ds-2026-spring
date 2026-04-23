@@ -1,11 +1,13 @@
 # ==============================================================================
 # Parallel Processing, it should work on windows env as well
 # ==============================================================================
-install.packages("future.apply")
+install.packages(c("future.apply", "purrr"))
 library(future.apply)
 library(parallel)
+library(purrr)
+library(car)
 
-num_cores <- detectCores() - 2 
+num_cores <- detectCores() - 2
 plan(multisession, workers = num_cores) 
 print(paste("Using", nbrOfWorkers(), "cores for parallel processing."))
 
@@ -15,7 +17,7 @@ approximate_null_distribution_fast <- function(expr_gene, inds, geneset, iters=1
     res = rank_genes(expr_gene, p1)
     res2 = compute_enrichment_score(res$diff, geneset)
     return(res2$ES_max)
-  }, future.seed = TRUE)
+  }, future.seed = 67L) # the seed should be fix in this func
   
   evids <- unlist(evids_list)
   return(evids)
@@ -25,7 +27,6 @@ approximate_null_distribution_fast <- function(expr_gene, inds, geneset, iters=1
 # STEP 0: MAIN SETUP, and load data
 # ==============================================================================
 setwd('/Users/fangsiyu/Desktop/sdu-2026-code/805_multivariate_statistical_analysis/team_project')
-library(car)
 
 source('hotelling.R')
 source('GSEA_functions.R')
@@ -37,8 +38,9 @@ hml_all <- readRDS("HML.RDS") # all the pathway and which genes build the pathwa
 
 genetic_lottery(c("ossch25", "ajash25", "sifan25"))
 lottery_result <- c("HALLMARK_ESTROGEN_RESPONSE_EARLY", "HALLMARK_ALLOGRAFT_REJECTION", "HALLMARK_DNA_REPAIR", "HALLMARK_PI3K_AKT_MTOR_SIGNALING", "HALLMARK_HEME_METABOLISM")
+
+lottery_result <- names(hml_all)
 my_5_pathway_and_gene <- hml_all[lottery_result] # extract the 5 pathway we need from hml_all
-set.seed(67)
 
 pathway_analysis <- function(pathway_name) {
   # ==============================================================================
@@ -52,7 +54,7 @@ pathway_analysis <- function(pathway_name) {
   current_geneset_genes <- my_5_pathway_and_gene[[pathway_name]] 
 
   es_result <- compute_enrichment_score(diff_scores, current_geneset_genes) # calculate how the pathway we pick is matched with all the genes order score
-  print(paste("Pathway:", pathway_name, "- Max ES:", es_result$ES_max))
+  print(paste(pathway_name, "- Max ES:", es_result$ES_max))
 
   null_dist <- approximate_null_distribution_fast(expr_gene, group_inds_logical, current_geneset_genes, iters = 1000) # generate 1000 random es score
   actual_es <- es_result[["ES_max"]]
@@ -78,10 +80,19 @@ pathway_analysis <- function(pathway_name) {
 
   t2_result <- two_sample_test(group1_data, group2_data)
   print(paste("T2 p-value  :", t2_result$pvalue))
+
+  return(data.frame(
+    Pathway = pathway_name,
+    Max_ES = es_result$ES_max,
+    GSEA_pvalue = gsea_pvalue,
+    T2_pvalue = t2_result$pvalue,
+    stringsAsFactors = FALSE
+  ))
 }
 
 
-all_results <- lapply(lottery_result, pathway_analysis)
+final_results_df <- map_df(lottery_result, pathway_analysis)
+write.csv(final_results_df, "5_pathways_results_1000.csv", row.names = FALSE)
 
 # ==============================================================================
 # Result
