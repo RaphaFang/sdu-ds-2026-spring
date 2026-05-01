@@ -11,7 +11,7 @@ num_cores <- detectCores() - 2
 plan(multisession, workers = num_cores) 
 print(paste("Using", nbrOfWorkers(), "cores for parallel processing."))
 
-approximate_null_distribution_fast <- function(expr_gene, inds, geneset, iters=1000, p=1) {
+approximate_null_distribution_fast <- function(expr_gene, inds, geneset, iters=10000, p=1) {
   evids_list <- future_lapply(1:iters, function(i) {
     p1 = sample(inds)
     res = rank_genes(expr_gene, p1)
@@ -39,7 +39,7 @@ hml_all <- readRDS("HML.RDS") # all the pathway and which genes build the pathwa
 genetic_lottery(c("ossch25", "ajash25", "sifan25"))
 lottery_result <- c("HALLMARK_ESTROGEN_RESPONSE_EARLY", "HALLMARK_ALLOGRAFT_REJECTION", "HALLMARK_DNA_REPAIR", "HALLMARK_PI3K_AKT_MTOR_SIGNALING", "HALLMARK_HEME_METABOLISM")
 
-lottery_result <- names(hml_all)
+# lottery_result <- names(hml_all)
 my_5_pathway_and_gene <- hml_all[lottery_result] # extract the 5 pathway we need from hml_all
 
 pathway_analysis <- function(pathway_name) {
@@ -56,7 +56,7 @@ pathway_analysis <- function(pathway_name) {
   es_result <- compute_enrichment_score(diff_scores, current_geneset_genes) # calculate how the pathway we pick is matched with all the genes order score
   print(paste(pathway_name, "- Max ES:", es_result$ES_max))
 
-  null_dist <- approximate_null_distribution_fast(expr_gene, group_inds_logical, current_geneset_genes, iters = 1000) # generate 1000 random es score
+  null_dist <- approximate_null_distribution_fast(expr_gene, group_inds_logical, current_geneset_genes, iters = 10000) # generate 1000 random es score
   actual_es <- es_result[["ES_max"]]
   gsea_pvalue <- sum(abs(null_dist) >= abs(actual_es)) / length(null_dist) 
   # compare random es with actual_es, find the ratio that's bigger than the score we actual got, how significant the actual_es is.
@@ -92,7 +92,7 @@ pathway_analysis <- function(pathway_name) {
 
 
 final_results_df <- map_df(lottery_result, pathway_analysis)
-write.csv(final_results_df, "5_pathways_results_1000.csv", row.names = FALSE)
+# write.csv(final_results_df, "5_pathways_results_1000.csv", row.names = FALSE)
 
 # ==============================================================================
 # Result
