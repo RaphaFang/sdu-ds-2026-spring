@@ -1,0 +1,665 @@
+---
+title: "DSK817 - Regression Diagnostics"
+author: "Henry Kirveslahti"
+date: "2026-03-12"
+
+output:
+  revealjs::revealjs_presentation:
+    theme: night
+    highlight: espresso
+    center: false 
+    transition: none
+    fig_caption: true
+    reveal_options:
+      width: 1280
+      height: 1200
+      margin: 0.10
+      minScale: 1
+      maxScale: 1
+      progress: true
+      slideNumber: true
+css: slides.css
+      
+  
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE}
+# 
+data=read.csv('../alr4data/UN11.csv')
+options(scipen=999)
+library(knitr)
+data2=data
+data2$logGDP=log(data2$ppgdp)
+data2$logGDP_c=data2$logGDP-mean(data2$logGDP)
+```
+
+## Motivation
+
+>- Up until now we have been fitting models and interpreting coefficients
+>- Today we are going to study more systematically the regression assumptions, as well as to assess if they are supported by the data  
+>- We will also look at mitigation strategies
+>- This follows the discussion in ALR chapter 9 (and summarizes the relevant parts of Chapters 1, 7 and 8)
+>- We will also learn a super cool trick: *Bootstrapping*
+
+## Linear regression - Assumptions
+
+In rough order of importance:
+
+>- Linearity 
+>- Independent errors
+>- Equal variance
+>- (normality)
+
+Other problems:
+
+>- Outliers
+>- multicollinearity
+>- (These are related to the above)
+
+## The UN data
+
+>- Our favorite data set - the UN11:
+>- The (obviously wrong) linear model on GDP per capita explaining Life Expectancy:
+```{r, echo=FALSE, fig.width=20, fig.height=8}
+par(mfrow=c(1,1))
+plot(data2$ppgdp,data$lifeExpF, ylab='LIFE EXP', cex.lab=1.5, xlab='gdp per capita')
+m1=lm(data2$lifeExpF~data2$ppgdp)
+abline(m1)
+grid()
+m1=lm(lifeExpF~ppgdp,data =data2)
+```
+>-  Question: How do we know this is wrong?
+
+## Regression Diagnostic Plots
+
+>- Learning objective of today: Understand these
+```{r, echo=TRUE, fig.width=20, fig.height=10}
+par(mfrow=c(2,2))
+m1=lm(data2$lifeExpF~data2$ppgdp)
+plot(m1)
+```
+
+## First plot: Fitted values against residuals
+
+>- Thoughts?
+```{r, echo=FALSE, fig.width=20, fig.height=12}
+plot(m1, which=1)
+```
+
+
+## Linearity - Problem and consequences
+
+>- If the linearity doesn't hold even approximately, the model is not appropriate
+>- Easy to assess in simple regression: just plot $x$ against $y$
+>- Multiple regression: look at individual covariates against residuals
+>- Also look at the residuals against covariates not included in the model
+>- Also look at the fitted values: $\hat y_i$ against residuals (the figure from last slide)
+>- If the model is linear, there should be no obvious pattern in any of the plots above
+
+## Fitted values vs. residuals - the null plot
+
+>- No visible pattern looks like this:
+```{r, echo=FALSE, fig.width=20, fig.height=12}
+N=1000
+x=rnorm(N)
+y=2*x+1+rnorm(N,0,0.1)
+m_null=lm(y~x)
+plot(m_null, which=1)
+```
+
+## Linearity - Cures
+
+>- If it doesn't seem linear, fix it: transform the covariate (or several)
+>- Could also add interactions, add terms, transform the response
+>- Skewed variables? Try log
+
+## Example:
+
+```{r, echo=TRUE}
+m1=lm(lifeExpF~ppgdp,data =data2)
+```
+
+```{r, echo=FALSE, fig.width=20, fig.height=10}
+par(mfrow=c(1,3))
+plot(data2$ppgdp,data$lifeExpF, ylab='LIFE EXP', cex.lab=1.5, xlab='gdp per capita', main=' y vs x', cex.main=3)
+m1=lm(data2$lifeExpF~data2$ppgdp)
+abline(m1)
+grid()
+plot(data2$ppgdp,m1$residuals, ylab='RESIDUALS', cex.lab=1.5, xlab='gdp per capita', main='residuals vs x', cex.main=3)
+abline(h=0)
+grid()
+plot(m1$fitted.values,m1$residuals, ylab='RESIDUALS', cex.lab=1.5, xlab='FITTED VALUES', main='residuals vs y hat', cex.main=3)
+abline(h=0)
+grid()
+```
+
+>- Note the systemic mistakes in the right panel
+
+
+## Log the gdp
+
+```{r, echo=TRUE}
+m2=lm(lifeExpF~log(ppgdp),data =data2)
+```
+
+```{r, echo=FALSE, fig.width=16, fig.height=8}
+par(mfrow=c(1,3))
+plot(log(data2$ppgdp),data$lifeExpF, main=' y vs x', cex.main=3)
+m2=lm(data2$lifeExpF~log(data2$ppgdp))
+abline(m2)
+grid()
+plot(log(data2$ppgdp),m2$residuals, main=' residuals vs x', cex.main=3)
+abline(h=0)
+grid()
+plot(m2$fitted.values,m2$residuals, main=' residuals vs yhat', cex.main=3)
+abline(h=0)
+grid()
+```
+
+>- Still a couple low residuals, but the systemic problem with the gdp got fixed
+
+## Second assumption - Independence of errors
+
+>- If the errors are not independent, there is some systematic structure not accounted for by the model - The model is wrong in a rather fundamental way
+>- Dependency among the residuals might also indicate problem in model specification
+>- It may be hard to discern if problems are stemming from violation of the independence assumption or misspecified mean -- all the same, the plots should look all right
+>- Thus: One way is to look at residuals against fitted values, and the cures are the same
+>- (An important exception to this is the *time series* and *longitudinal data*, where serial correlation in errors can be studied in more detail)
+>- There are also formal tests one can conduct to investigate serial correlation -- this is usually only relevant if the data comes in an ordered fashion (modeling daily rain fall - temporal dependency, modeling air pollution -- spatial dependency)
+
+
+## Third assumption - Equal variance - Problem and consequences
+
+>- If the errors don't have equal variances, our uncertainty estimates may not be accurate
+>- Also, the OLS estimates may no longer be the most powerful ones out there
+>- That being said, a model can still be useful with these mistakes, for as long as independence and linearity are satisfied
+>- Violations of *homoschedasticity* (equal variance) can be seen from the 1st and the 3rd plot
+>- (The third plot is little easier to read because it uses standardized residuals and shows their absolute value with a smoother)
+
+
+## Equal variance - Cues
+
+
+>- (The model below has all other kinds of problems also, but the red line should be about horizontal)
+```{r, echo=FALSE, fig.width=20, fig.height=12}
+plot(m1, which=3)
+```
+
+## Equal variance - The null plot
+
+```{r, echo=FALSE, fig.width=20, fig.height=12}
+plot(m_null, which=3)
+```
+
+## Non- Equal variance - Fanning
+
+>- Residuals grow with the errors
+
+```{r, echo=FALSE, fig.width=20, fig.height=12}
+N=1000
+x=runif(N)
+y=2*x+1+x*rnorm(N,0,0.1)
+m_fanned=lm(y~x)
+par(mfrow=c(1,3))
+plot(x,y, main='THE DATA')
+plot(m_fanned, which=3 , main='3rd Diag Plot')
+plot(m_fanned, which=1, main='1st Diag Plot')
+```
+
+
+## Non-Equal variance - Butterfly
+
+```{r, echo=FALSE, fig.width=20, fig.height=12}
+N=1000
+x=runif(N,-1,1)
+y=2*x+1+x*rnorm(N,0,0.1)
+m_fanned=lm(y~x)
+par(mfrow=c(1,3))
+plot(x,y)
+plot(m_fanned, which=3)
+plot(m_fanned, which=1)
+```
+
+
+## Equal variance - Cures
+
+>- Transform $y$ 
+>- Another cure: Model something different (e.g. change instead of actual value, scale instead of volume etc.)
+>- logarithms and square roots are particularly good, another popular method is the *Box-Cox Transformation*
+>- An alternative is to use *Weighted linear squares* or *Robust regression* -- estimates from these can be better than OLS if the variance is not equal
+>- (Another idea is the *mixed effects* models)
+
+## Box-Cox Transform
+
+>- Box and Cox proposed to transform a \textbf{positive} response variable $y$ with a \emph{power transform} to force it to normality by taking a family of power transformations and then finding an optimal one based on a criterion, i.e. find $\lambda \in \mathbb{R}$ such that
+$$
+y^{(\lambda)} = \frac{y^\lambda -1}{ \lambda}, \ \textrm{ for } \lambda \neq 0, \ \textrm{ and } \ y^{(0)}= \log(y).
+$$
+is as close to being normally distributed as possible
+>- This is usually done to transform the data to normality, but it can also be used to stabilize the variance
+>- Also, this will change the mean function, linearity of the mean should be bigger problem 
+>- While this is automatic, which is nice, it often ruins interpretability and makes the model more complicated and the gains might be limited
+>- One idea is to use the Box-Cox transform to get a ballpark estimate for $\lambda$ and then just use that instead
+>- Modification exist to allow negative values for $y$ (e.g. Yeo-Johnson transform)
+>- In practice its usually just easier to test suitable transforms manually
+
+## Box-Cox Transform - Example
+
+ 
+```{r, echo=TRUE, fig.width=20, fig.height=12}
+library(MASS) # needed for boxcox
+par(mfrow=c(2,2))
+n=1000
+x=runif(n)
+y_orig=rnorm(n, 1+2*x, 0.1)
+y=sqrt(y_orig)
+m1=lm(y~x)
+plot(m1)
+
+```
+
+## Box-Cox Transform - Example
+
+>- Box-cox plots the normal likelihood for different values of $\lambda$
+>- The maximum here seems to be about 2 (which makes sense since we took a square root y earlier)
+```{r, echo=TRUE, eval=FALSE, fig.width=20, fig.height=12}
+boxcox(m1, seq(-1,5, by=0.1))
+```
+
+```{r, echo=FALSE, fig.width=20, fig.height=12}
+boxcox(m1, seq(-1,5, by=0.1)) # If you are reading this, there are two code chunks here to make the slides prettier.
+b=boxcox(m1, seq(-1,5, by=0.1)) # the code chunk above is just for show (eval=FALSE, echo=TRUE)
+```
+
+
+## Box-Cox Transform - Example
+
+```{r, eval=FALSE, fig.width=20, fig.height=12}
+b=boxcox(m1, seq(-1,5, by=0.1))
+```
+>- We can now fit the data with our newly found $\lambda =2$
+```{r, echo=TRUE, fig.width=15, fig.height=8}
+par(mfrow=c(2,2))
+lambda <- b$x[which.max(b$y)]
+l=round(lambda)
+y_new=y^l/(l)
+m1b=lm(y_new~x)
+plot(m1b)
+```
+
+
+
+## Weighted linear regression
+
+>- The Gauss-Markov Theorem says the OLS estimates are optimal if the means is linear and the errors are iid with zero mean -- if this is not the case, then we can still use the OLS approach, but it might be inefficient (i.e., there is a better guess than $\hat \beta$)
+>- If the errors have different variances $V_i$, we can re-weight the data-points and fit linear squares to that data 
+>- If the weights $w_i$ are set to $\frac{1}{V_i}$, it can be shown that this weighting is now the optimal one in the Gauss-Markov sense (provided the mean function is correctly specified, and that there is no correlation among them)
+>- Problem: we don't know what the variance $V_i$ is, so we need to estimate it.
+
+
+## One Strategy for fitting weighted linear regression
+
+>- First fit a linear model (the main model) as per usual:
+$$
+y_i = X \beta + \epsilon_i,
+$$
+get the fitted values $\hat y_i$, and residuals $\hat \epsilon_i = y_i - \hat y_i$.
+>- Now fit an auxiliary model M2 based on the main model:
+$$
+|\hat \epsilon_i| = \beta_0 + \beta_1 \hat y_i + \delta_i.
+$$
+>- In M2, the response is the absolute values of the residual from the main model
+>- The systematic part, $s_i=\beta_0 + \beta_1 \hat y_i$ is the population mean of the standard deviation at response level $\hat y_i$
+>- In other words, $S_i=(\beta_0 + \beta_1 \hat y_i)^2$ gives an estimate for the variance at $\hat y_i$
+>- Now we can fit re-fit the main model with weights $1/S_i$.
+>- (It is also possible to do different M2 to estimate the variance (e.g. add quadratic term), important is the variance needs to be positive)
+
+## Weighted linear regression - example
+
+>- We are using simulated data where the variance grows with $x$
+
+```{r, echo=TRUE, fig.width=20, fig.height=12}
+par(mfrow=c(2,2))
+n=200
+x=runif(n)
+epsilons=0.1+6*x
+y=rnorm(n,mean = x, sd = epsilons)
+m1=lm(y~x)
+plot(m1)
+stds=abs(m1$residuals)
+yhats=m1$fitted.values
+
+M2=lm(stds~yhats)
+
+```
+
+
+## Weighted linear regression - example
+
+>- Refit with new weights
+
+```{r, echo=TRUE, fig.width=20, fig.height=12}
+par(mfrow=c(2,2))
+weights=1/(M2$fitted.values)^2
+m1b=lm(y~x,weights = weights)
+plot(m1b)
+```
+
+## Weighted linear regression - example
+
+```{r, echo=TRUE, fig.width=20, fig.height=12}
+m1$coefficients
+```
+
+```{r, echo=TRUE, fig.width=20, fig.height=12}
+m1b$coefficients
+```
+
+
+## Weighted linear regression - comments
+
+>- The weighted regression can be used to get more accurate guesses in case the variance is not equal
+>- If your data has points that seem suspicious (points where the model doesnt seem to fit well), one idea is to do the OLS and the weighted regression, and compare what kind of inference you get. If the conclusions are in agreement, everything is probably ok
+
+
+## Fourth problem - Normality of errors - Problems and consequences
+
+>- Normality is needed for the $t$-tests (and the $F$-tests, which we haven't talked about)
+>- For as long as the the residuals are iid and equal variance, this is not a big problem 
+>- Residuals can be normal even if the errors are not - this is thanks to central limit theorem
+>- Gauss-Markov still holds true regardless of normality, the OLS estimators are still the champions
+
+## Normality - cues
+
+>- For normal residuals: the graph on the right (upper right corner on slide 5) should be a straight 45 degree line
+
+```{r, echo=FALSE, fig.width=20, fig.height=12}
+par(mfrow=c(1,2))
+hist(m1$residuals)
+plot(m1, which=2)
+```
+
+## More on QQ-norm plot - left skewed distribution
+
+```{r, echo=FALSE, fig.width=20, fig.height=12}
+par(mfrow=c(1,2))
+sample=rchisq(1000,3)
+hist(sample)
+qqnorm(sample-mean(sample))
+abline(a=0,b=1)
+```
+
+## More on QQ-Plot- right skewed distribution
+
+```{r, echo=FALSE, fig.width=20, fig.height=12}
+par(mfrow=c(1,2))
+sample=15-rchisq(1000,3)
+hist(sample)
+qqnorm(sample-mean(sample))
+abline(a=0,b=1)
+```
+
+## Normality - Null plot
+
+```{r, echo=FALSE, fig.width=20, fig.height=12}
+par(mfrow=c(1,2))
+hist(m_null$residuals)
+plot(m_null, which=2)
+```
+
+## Normality - cures
+
+>- Typically normality can get cured by manipulating the mean function (because there is also something else wrong with the model)
+>- If no other problems exist, there might not even be a need to cure it
+>- In that case, we could use e.g. *bootstrapping* for uncertainty quantification estimates
+>- Another option would be to re-derive the tests using the correct distribution - if it is known or can be otherwise identified (deriving the tests is an exercise in mathematical statistics and beyond this course)
+
+## Bootstrapping
+
+![Baron riding a Canonball.](canonball.jpg){#id .class width=600 height=800px}
+
+>- A modern trick for uncertainty quantification
+>- The name comes from *Baron von Münchhausen*, a German nobleman known for his heroic exploits
+>- In one of his stories he pulls himself from the swamp using his own *bootstrap*
+
+
+## Pulling yourself up with your own bootstrap
+
+>- Idea: Treat the sample as a population, and approximate the sampling distribution by taking subsamples from the samples
+>- For as long as the sample is representative of the population, we can recover the sampling distribution by taking the subsamples many times
+>- NB: We did something very similar in the first exercise sessions to get the sampling distribution for the regression coefficients
+>- Incredibly powerful, incredibly general
+>- (This was discovered in 1979 by Bradley Efron, arguably the biggest innovation in *frequentist statistics* since the work Ronald Fisher)
+
+## Bootstrapping
+
+>- Many variants of the bootstrap exist
+>- The most common variant: sample size $n$, take $S>>n$ bootstrap samples of size $n$ by resampling **with replacement**
+>- Compute whatever estimates you are interested in, recover confidence intervals via their empiric distribution
+>- While general, it does lose to the traditional methods **if the assumptions are met**
+>- Also: The classic methods are more widely accepted than bootstrap
+
+## Bootstrapping - Example
+
+>- True model $y_i = 1 + 2 x_i + \epsilon_i$, $\epsilon_i \sim^{\textrm{iid}}\mathcal{N}(0,0.1^2)$
+>- Bootstrapped distributions with $n=100$ samples, using $S=10,000$ bootstrap iterations
+>- (See the .rmd for implementation details)
+
+```{r, echo=FALSE, fig.width=20, fig.height=12}
+
+# Generation of a population
+N=100000 # Size of population
+X=runif(N) # N random samples uniformly between 0 and 1
+epsilons=rnorm(n=N,mean=0,sd=0.1) # 0 mean, variance 0.1^2
+Y=2*X+1 + epsilons # The data generation mechanism
+
+###################
+# The observed data
+###################
+# Take a sample from the population
+# This is the data that we would observe 
+n=100 # number of observations
+sampled_indices=sample(1:N,n,replace=FALSE) # Sample individuals from the populations
+y=Y[sampled_indices] # the x-values for the sampled individuals
+x=X[sampled_indices] # the y- values for the sampled individuals
+
+# Setup the bootstrapping scheme
+S=10000
+intercepts=rep(0,S)
+slopes=rep(0,S)
+for (i in 1:S) {
+  sampled_indices=sample(1:n,n,replace=TRUE) # select n data rows from the OBSRVED DATA, with replacement!
+  xx=x[sampled_indices] # the values for x for the selected rows
+  yy=y[sampled_indices] # the values for y for the selected rows
+  m_tmp=lm(yy~xx) # fit a model for the boostrap sample
+  intercepts[i]=m_tmp$coefficients[1] # get b0 from the model and store to intercepts
+  slopes[i]=m_tmp$coefficients[2]
+}
+
+```
+
+```{r, echo=FALSE, fig.width=20, fig.height=12}
+par(mfrow=c(1,2))
+hist(intercepts)
+hist(slopes)
+```
+
+## The actual estimates from the sample
+
+```{r, echo=FALSE, fig.width=20, fig.height=12}
+m25=lm(y~x)
+summary(m25)
+beta0=c(mean(intercepts),sd(intercepts))
+beta1=c(mean(slopes),sd(slopes))
+table=cbind(beta0,beta1)
+table2=t(table)
+names(table2)=c('mean','sd')
+```
+
+Bootstrapped:
+```{r, echo=FALSE, fig.width=20, fig.height=12}
+kable(table2)
+```
+
+
+
+
+##  Partial summary
+
+>- We have now covered 3 of the 4 plots 
+>- The last plot is regarding outliers
+```{r, echo=FALSE, fig.width=20, fig.height=12}
+par(mfrow=c(2,2))
+plot(m1)
+```
+
+## Part II - Outliers
+
+>- The 4th plot: standardized residuals and leverage
+
+```{r, echo=FALSE, fig.width=20, fig.height=12}
+plot(m1,which=5)
+```
+
+## Leverage - the idea
+
+>- If a single data point hat a lof of influence on the outcome of the analysis, the analysis may not be very trustworthy
+>- Recall the rice price data from Lecture 1 - Prices in 2003 vs 2009:
+```{r, echo=FALSE, fig.width=20, fig.height=12}
+data=read.csv('../alr4data/UBSprices.csv')
+x=data$rice2003
+y=data$rice2009
+par(mfrow=c(1,2)) # side by side plot
+m1=lm(rice2009~rice2003, data=data) # fit linear model
+plot(data$rice2003,data$rice2009, pch=3,xlim=c(0,100)) #plot data
+points(data$rice2003[36],data$rice2009[36], cex=4.5, col='red')
+points(data$rice2003[36],data$rice2009[36], cex=5, col='red')
+points(data$rice2003[36],data$rice2009[36], cex=5.5, col='red')
+grid()
+abline(m1) #add regression line to the plot
+data2=data[-c(36),] # Remove the 2 observations identified by identify earlier
+m2=lm(rice2009~rice2003, data=data2) #refit the model
+plot(data2$rice2003,data2$rice2009, pch=3,xlim=c(0,100))
+grid()
+abline(m2)
+```
+
+## Leverage - the idea
+
+>- The data point 36 here (Mumbai) is an outlier (large residual), and at that an influential outlier (high leverage)
+
+```{r, echo=FALSE, fig.width=20, fig.height=12}
+par(mfrow=c(1,2))
+m1=lm(rice2009~rice2003, data=data) # fit linear model
+plot(data$rice2003,data$rice2009, pch=3,xlim=c(0,100)) #plot data
+points(data$rice2003[36],data$rice2009[36], cex=4.5, col='red')
+points(data$rice2003[36],data$rice2009[36], cex=5, col='red')
+points(data$rice2003[36],data$rice2009[36], cex=5.5, col='red')
+abline(m1) #add regression line to the plot
+grid()
+plot(m1, which=5)
+```
+
+
+## The Daily Dose of Theory
+
+>- The regression model:
+$$
+Y = X \beta + \epsilon
+$$
+>- Plug in the OLS estimate $\hat \beta$, get
+$$
+Y = X(X^TX)^{-1}X^T{\hat\beta} + \epsilon
+$$
+>- $X(X^TX)^{-1}X^T=:H$ is called the *hat matrix*
+>- I.e $\hat Y= HY$
+>- The residuals are what is left of $Y$:
+$$
+\hat{\epsilon} = (I-H)Y
+$$
+>- $H$ and $I-H$ are *projection matrices*, first projects to the columns of $X$, second to its orthogonal complement
+>- (projection matrices satisfy $H^2=H$, which we need soon)
+
+
+## Distribution of residuals
+
+>- From the above, the residuals have 0 mean and variance
+$$
+\textrm{Var}(\hat{\epsilon}) = (I-H)\sigma^2
+$$
+>- (these are then correlated, because $H$ (usually) contains non-diagonal elements)
+>- The variance of an individual residual $\hat \epsilon_i$ is given by $\sigma^2(1-h_{ii})$, where $h_{ii}$ is the $i$th diagonal entry of $H$, known as *leverage* 
+>- This is because the fitted value $\hat y_i$ satisfies
+$$
+\hat y_i = h_{ii} y_i + \sum_{ j \neq i} h_{ij} y_j, \ \textrm{ with }  \sum_{j} h_{ij}=1,
+$$
+>- i.e. a high leverage point: the predicted line ($\hat y_i$) will be close to the observed value $y_i$, if $h_{ii}$ is large -- the fitted value at $x_i$ has potential to influence the results a lot (i.e. high leverage)
+>- Note that the leverage does not depend on the response $y$, only $X$.
+>- If the residual at the data point $(x_i, y_i)$ is also large, then the datapoint will have big impact on the analysis
+>- This is what the *Cook's distance* (whose contours are visible in the 4th plot) measures
+
+## Cook's distance
+
+>- Rule of thumb: $D_i > 1$ might indicate an important outlier
+
+```{r, echo=TRUE, fig.width=20, fig.height=12}
+plot(m1, which=4)
+```
+
+## What to do about outliers?
+
+>- Best case: collect more data
+>- Most common case: Delete the case (criminal, should only be considered if it is actual mistake in data)
+>- Weighted linear regression or robust regression might also be alternatives
+>- A more involved alternative might be modeling the outlier status itself *rare events*
+>- Another idea - RANSAC - random subsample and estimate if agree
+
+## The null plot for the 4th plot
+
+```{r, echo=TRUE, fig.width=20, fig.height=12}
+plot(m_null, which =5)
+```
+
+##  Cooks distances (null plot)
+
+```{r, echo=TRUE, fig.width=20, fig.height=12}
+plot(m_null, which =4)
+```
+
+## Conclusions
+
+>- The regression assumptions are, in the order of severity
+>- Linearity 
+>- Independent errors
+>- Equal variance
+>- (normality)
+>- Outliers can also impact the analysis
+
+##  Recap - We should understand this
+
+```{r, echo=TRUE, fig.width=20, fig.height=12}
+par(mfrow=c(2,2))
+plot(m_null)
+```
+
+## Conclusions
+
+>- Other than graphics, there is also a battery of tests that can be used to quantify the violations
+>- Stats is an art and a science, looking plots is what we usually do
+>- Also: All models are wrong - over interpretation is a problem, particular if $n$ is small
+>- Important to think about the data
+>- Model fitting is an iterative process: look at data, fit, diagnose, fit again, compare to another, fit more, diagnose, 
+>- Multiple testing can also become a problem -- more on this later
+>- Also need to be careful not to *beat the data to death*
+
+## Summary
+
+>- Today we have discussed some tools to assess model validity
+>- This forms the basis for model selection
+>- We will next proceed to systemic evaluation of models 
+>- An important topic that also has to do with model selection is the $F$-test, which is outputted by $\texttt{summary(lm)}$ and described in ALR Chapter 6

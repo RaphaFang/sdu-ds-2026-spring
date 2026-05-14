@@ -1,0 +1,77 @@
+---
+title: "DSK817 - Regression Diagnostics"
+author: "Si-Yu Fang"
+date: "2026-05-13"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+header-includes:
+  - \usepackage{xeCJK}
+  - \setCJKmainfont{Arial Unicode MS}
+---
+
+```{r message=FALSE, warning=FALSE}
+library(car)
+library(glmnet)
+library(knitr)
+library(kableExtra)
+
+setwd('/Users/fangsiyu/Desktop/sdu-2026-code/817_statistic_modeling/project')
+df <- read.csv("data/examdata.csv")
+df$height <- df$height * 100
+
+# ==============================================================================
+# STEP 1.1: PCA 計算與繪圖
+# ==============================================================================
+pca_res <- prcomp(df[, -c(1, 2)], center = TRUE, scale. = TRUE)
+pc1 <- pca_res$x[, 1]
+pc2 <- pca_res$x[, 2]
+
+point_colors <- ifelse(df$sex == "F", "red", "blue")
+
+# 繪圖 (這會直接出現在 PDF 裡)
+plot(pc1, pc2, 
+     col = point_colors,
+     pch = 16,
+     xlab = "PC1", 
+     ylab = "PC2", 
+     main = "PCA, by Sex")
+
+legend("topright",
+       legend = c("F", "M"),
+       col = c("red", "blue"),
+       pch = 16)
+
+# ==============================================================================
+# STEP 1.2: 使用 kable 產出 PCA 摘要表格
+# ==============================================================================
+
+# 提取重要性資訊
+pca_importance <- as.data.frame(summary(pca_res)$importance)
+
+# 產出符合 PDF 格式的表格
+kable(pca_importance, 
+      digits = 3, 
+      caption = "PCA 變異數解釋比例摘要",
+      align = "c") %>%
+  kable_styling(latex_options = c("striped", "hold_position"), 
+                full_width = F) %>%
+  add_header_above(c(" " = 1, "Principal Components" = ncol(pca_importance)))
+```
+
+I iwll test some normal text here.
+
+>- I iwll test some normal text here.
+
+```{r message=FALSE, warning=FALSE}
+library(stargazer)
+# 直接把你的三個模型丟進去
+stargazer(model_1_ols_all, model_2_robust, model_3_ols_clean, 
+          type = "text",                  # 如果是在 Console 看，用 "text"；輸出報告建議用 "html" 或 "latex"
+          title = "敏感度分析：模型係數比較表",
+          column.labels = c("包含39(OLS)", "包含39(Robust)", "剔除39(OLS)"),
+          digits = 3,                     # 小數點位數
+          model.names = FALSE,            # 隱藏預設的模型名稱
+          dep.var.labels = "體脂率 (%)",   # 設定應變數標籤
+          covariate.labels = c("身高", "腹圍", "年齡", "手腕", "截距")) # 設定變數名稱
+```
