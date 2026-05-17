@@ -1,77 +1,458 @@
 ---
-title: "DSK817 - Regression Diagnostics"
-author: "Si-Yu Fang"
-date: "2026-05-13"
+title: |
+  \vspace*{-2cm}
+  DSK817 - Final Report, Estimating Body Fat
+author: |
+  Si-Yu Fang \
+  \small \texttt{sifan25@student.sdu.dk}
+date: "2026-05-15"
 output: 
   pdf_document:
     latex_engine: xelatex
 header-includes:
   - \usepackage{xeCJK}
   - \setCJKmainfont{Arial Unicode MS}
----
+  - \usepackage{float}
+  - \usepackage{graphicx}
 
-```{r message=FALSE, warning=FALSE}
-library(car)
-library(glmnet)
+---
+## I. Introduction
+
+This project aims to develop a scalable and interpretable method for estimating body-fat percentage, via tape and common body measurements. The formulas below highlight the final predictors and coefficients. Central to my findings, the abdomen measurement appeared to be the most significant predictor for both sexes. Take most important variable for example, assuming all other variables are held constant, 1 cm increase in the abdomen measurement is associated with a +0.7388% increase in body fat for males (t-value = 22.785) and a +0.3570% increase for females (t-value = 5.664).
+
+$$
+\widehat{\text{Fat}}\%_{M} = \underset{(7.766)}{4.578} - \underset{(0.046)}{0.126^{**}} \text{Height(cm)} + \underset{(0.032)}{0.739^{***}} \text{Abdomen} + \underset{(0.023)}{0.053^{*}} \text{Age} - \underset{(0.393)}{1.846^{***}} \text{Wrist}
+$$
+$$
+\widehat{\text{Fat}}\%_{F} = \underset{(7.617)}{-17.016^{*}} - \underset{(0.047)}{0.205^{***}} \text{Height} + \underset{(0.063)}{0.357^{***}} \text{Abdomen} + \underset{(0.08)}{0.34^{***}} \text{Hip} + \underset{(0.168)}{0.424^{*}} \text{Knee}
+$$
+
+## II. Methodology
+The process was structured into five key stages. First, decide whether we should build a sex-specific model. Second, multicollinearity management. Third, regression diagnostics. Fourth, sensitivity analysis. Fifth, prediction intervals.
+
+### Stage 1: Justification for Sex-Specific Modeling
+
+Intuitively, sex influences the fundamental distribution of body fat. However, we need a clear and objective signal to justify this intuition.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 library(knitr)
-library(kableExtra)
+library(stargazer)
+library(dplyr)
+library(ggplot2)
+library(broom)
 
 setwd('/Users/fangsiyu/Desktop/sdu-2026-code/817_statistic_modeling/project')
 df <- read.csv("data/examdata.csv")
 df$height <- df$height * 100
+```
 
-# ==============================================================================
-# STEP 1.1: PCA 計算與繪圖
-# ==============================================================================
+**Principal Component Analysis (PCA): **
+In the PCA plot below, the plot indicates the two most significant approaches to slice the data. After label it with the sex labels, there appears to be a clear separation of the two sexes. The table below shows the top 5 PCs, and we can see that PC1 and PC2 accumulate over 80% of the whole.
+
+```{r pca-plot, echo=FALSE, out.width="80%", fig.width=8, fig.height=4, fig.align="center", fig.pos="H", fig.cap="PCA Plot labeled by Sex"}
 pca_res <- prcomp(df[, -c(1, 2)], center = TRUE, scale. = TRUE)
 pc1 <- pca_res$x[, 1]
 pc2 <- pca_res$x[, 2]
 
-point_colors <- ifelse(df$sex == "F", "red", "blue")
+point_colors <- ifelse(df$sex == "F", "red", "blue") 
 
-# 繪圖 (這會直接出現在 PDF 裡)
 plot(pc1, pc2, 
      col = point_colors,
      pch = 16,
+     cex = 0.5,
+     cex.axis = 0.7,
+     cex.lab = 0.8,
+     cex.main = 0.9,
      xlab = "PC1", 
-     ylab = "PC2", 
-     main = "PCA, by Sex")
+     ylab = "PC2")
 
 legend("topright",
        legend = c("F", "M"),
        col = c("red", "blue"),
-       pch = 16)
-
-# ==============================================================================
-# STEP 1.2: 使用 kable 產出 PCA 摘要表格
-# ==============================================================================
-
-# 提取重要性資訊
-pca_importance <- as.data.frame(summary(pca_res)$importance)
-
-# 產出符合 PDF 格式的表格
-kable(pca_importance, 
-      digits = 3, 
-      caption = "PCA 變異數解釋比例摘要",
-      align = "c") %>%
-  kable_styling(latex_options = c("striped", "hold_position"), 
-                full_width = F) %>%
-  add_header_above(c(" " = 1, "Principal Components" = ncol(pca_importance)))
+       pch = 16,
+       cex = 0.7,
+       pt.cex = 0.5,
+       bty = "n")
 ```
 
-I iwll test some normal text here.
+```{r pca-table, echo=FALSE}
+knitr::kable(summary(pca_res)$importance[, 1:5], digits = 3, caption = "Summary of Principal Component Importance")
+```
 
->- I iwll test some normal text here.
+**T-test: **
+With the null hypothesis ($H_0$) stating that sex has no effect on body fat percentage, the difference in mean body fat between males and females is exactly zero. As shown in the table below, we got a p-value of 5.364e-05, which indicates strong significance to reject $H_0$. Besides, the mean for females is 21.76 and the mean for males is 19.04. The 95% confidence interval for the difference in means is $[1.40\%, 4.02\%]$, which does not cross 0.
 
-```{r message=FALSE, warning=FALSE}
+```{r t-test-sex, echo=FALSE, message=FALSE, warning=FALSE}
+t_test_res <- t.test(fat_percent ~ sex, data = df)
+t_test_res$p.value <- format(t_test_res$p.value, scientific = TRUE, digits = 3)
+
+knitr::kable(tidy(t_test_res), 
+             digits = 3, 
+             caption = "t-test: Body-fat Percentage by Sex")
+```
+
+
+**Interactions by Sex Correlations: **
+The correlation table below shows each different tape measurement associated with body-fat by sex. As we can see, for males, the abdomen and chest show a stronger association with body-fat. For females, the thigh and abdomen take the lead. I also provided a plot alongside regarding the differences in each sex's features. We can see that the chest and thigh have a greater difference based on sex, and we might also be able to interpret that the abdomen, in this case, is a strong common feature for both sexes, since it appears in the top 2 of both correlation tables. Finally, the plots below show the slopes of the two sexes, with a comparison of the top three feature differences.
+
+```{r cor-tables-side-by-side, echo=FALSE,fig.cap="Correlation Table by Sex"}
+df_sex <- data.frame(
+  Rank = 1:5,
+  `Male Feature` = c("abdomen", "chest", "hip", "thigh", "elbow"),
+  `r (Male)` = c(0.8136, 0.7028, 0.6255, 0.5604, 0.5598),
+  `Female Feature` = c("thigh", "abdomen", "hip", "biceps", "knee"),
+  `r (Female)` = c(0.7968, 0.7401, 0.7148, 0.6702, 0.6280),
+  check.names = FALSE
+)
+spacer <- data.frame(`   ` = rep("", 5), check.names = FALSE)
+df_diff <- data.frame(
+  `Rank ` = 1:5,
+  `Max Diff Feature` = c("chest", "thigh", "forearm", "biceps", "ankle"),
+  `|Δr|` = c(0.2645, 0.2364, 0.2236, 0.1771, 0.1644),
+  check.names = FALSE
+)
+combined_table <- cbind(df_sex, spacer, df_diff)
+knitr::kable(combined_table, digits = 2, align = "c", caption = "Correlation Table by Sex")
+```
+
+```{r slope-plots-combined, echo=FALSE, out.width="100%", fig.width=12, fig.height=4.5, fig.pos="H", fig.align='center', fig.cap="Slope Plot labeled by Sex"}
+par(mfrow = c(1, 3))
+point_colors <- ifelse(df$sex == "F", "red", "blue")
+
+plot(df$chest, df$fat_percent, col = point_colors, pch = 16, cex = 0.6,
+     xlab = "Chest", ylab = "Body Fat %", main = "Chest%")
+abline(lm(fat_percent ~ chest, data = subset(df, sex == "F")), col = "red", lwd = 2)
+abline(lm(fat_percent ~ chest, data = subset(df, sex == "M")), col = "blue", lwd = 2)
+
+plot(df$thigh, df$fat_percent, col = point_colors, pch = 16, cex = 0.6,
+     xlab = "Thigh", ylab = "Body Fat %", main = "Thigh%")
+abline(lm(fat_percent ~ thigh, data = subset(df, sex == "F")), col = "red", lwd = 2)
+abline(lm(fat_percent ~ thigh, data = subset(df, sex == "M")), col = "blue", lwd = 2)
+
+plot(df$forearm, df$fat_percent, col = point_colors, pch = 16, cex = 0.6,
+     xlab = "Forearm", ylab = "Body Fat %", main = "Forearm%")
+abline(lm(fat_percent ~ forearm, data = subset(df, sex == "F")), col = "red", lwd = 2)
+abline(lm(fat_percent ~ forearm, data = subset(df, sex == "M")), col = "blue", lwd = 2)
+
+legend("topleft", legend = c("F", "M"), col = c("red", "blue"), pch = 16, lty = 1, lwd = 2, bty = "n")
+```
+
+To sum up, with the PCA, t-test, and the visualization of the slopes, I decided that the model building process should be separated by sex. To meet the requirement of not more than three tape measurements, we have to decide which variables we should keep, and if there is a clean and simple way to build the model.
+
+### Stage 2: Multicollinearity Management
+
+Multicollinearity will cause the inflation of the regression coefficients and reduce the stability of the model. Thus, in this section, I ran through different steps to mitigate its effects and pick as few collinear variables as possible. It starts with the Variance Inflation Factor (VIF), fits a LASSO model, uses stepwise regression with AIC (Akaike Information Criterion), and finally tries interactions. The whole process took a lot of time and several turns of going back and forth; therefore, I will only display the most important and accurate models for going through the steps.
+
+**Variance Inflation Factor (VIF): **
+To prevent multicollinearity, VIF is the first thing I tried. In addition, as I discovered, if we directly jump to Lasso, it will easily offer non-penalized and misleading feature selection results, at least for the female LASSO part, due to severe multicollinearity. I will discuss this in the Lasso Regression section.
+
+VIF detects multicollinearity by evaluating how much each independent variable can be explained by the others. This means we take turns making each variable a predictor in the model, with the rest of the variables acting as the dependent variables. After that, we extract the $R^2$ and put it in the formula below (Kutner et al., 2004). If the $R^2$ is close to 1, it means this specific variable can almost be predicted by the rest of the variables, and it will get a significantly large number compared to the rest. I took the threshold as 10, which the citation suggests^[Kutner, M. H., Nachtsheim, C. J., Neter, J., & Li, W. (2004). Applied Linear Statistical Models (5th ed.). McGraw-Hill Irwin.]. However, we cannot completely trust the result from VIF; in my experience, if we filter out the abdomen from the male dataset, it will offer even worse results. Therefore, we still have to manually pick some edge variables based on subjective understanding. The tables below show the VIF results after several turns of filtering.
+
+$$ VIF_k = \frac{1}{1 - R_k^2} $$
+
+```{r calculate-vif-male, echo=FALSE, message=FALSE, warning=FALSE}
+library(car)
+df_with_bg_variable_M <- df %>% filter(sex == "M") %>% select(-(c("sex", "weight", "elbow", "calf", "study", "bmi")))
+full_model_M <- lm(fat_percent ~ ., data = df_with_bg_variable_M)
+vif_M <- vif(full_model_M)
+
+vif_horizontal <- as.data.frame(t(vif_M))
+knitr::kable(vif_horizontal, digits = 3, row.names = FALSE, align = "c", caption = "VIF Analysis for Male Model")
+```
+```{r calculate-vif-female, echo=FALSE, message=FALSE, warning=FALSE}
+library(car)
+df_with_bg_variable_F <- df %>% filter(sex == "F") %>% select(-(c("sex", "weight", "study", "bmi", "thigh")))
+full_model_F <- lm(fat_percent ~ ., data = df_with_bg_variable_F)
+vif_F <- vif(full_model_F)
+
+vif_horizontal_F <- as.data.frame(t(vif_F))
+knitr::kable(vif_horizontal_F, digits = 3, row.names = FALSE, align = "c", caption = "VIF Analysis for Female Model")
+```
+
+**Lasso Regression: **
+I took Lasso regression for automatic feature selection and to prevent overfitting. The L1 penalty in Lasso shrinks the coefficients of less important predictors to zero, effectively removing unnecessary variables from the model. I selected `lambda.1se` in the function, which takes the largest $\lambda$ within one standard error of the minimum cross-validation error. This offers a more aggressively filtered result.
+
+Notably, if we omit the VIF step ahead, it can lead to penalty failure. When variables are highly collinear, the cross-validation process often 'cheats' by selecting a near-zero penalty parameter ($\lambda$) to minimize prediction error. As a result, Lasso will perform just like standard Ordinary Least Squares (OLS) regression, causing all redundant variables to pass through.
+
+```{r lasso-coefficients-side-by-side, echo=FALSE}
+df_lasso_M <- data.frame(
+  `Male Feature` = c("(Intercept)", "height", "age", "abdomen", "ankle", "biceps", "chest", "forearm", "hip", "knee", "neck", "thigh", "wrist", ""),
+  `Coef (M)` = c("-13.9025", "-0.0596", "0.0363", "0.6027", ".", ".", ".", ".", ".", ".", ".", ".", "-0.7597", ""),
+  check.names = FALSE
+)
+spacer <- data.frame(`   ` = rep("", 14), check.names = FALSE)
+
+df_lasso_F <- data.frame(
+  `Female Feature` = c("(Intercept)", "height", "age", "abdomen", "ankle", "biceps", "calf", "chest", "elbow", "forearm", "hip", "knee", "neck", "wrist"),
+  `Coef (F)` = c("-28.2985", "-0.0486", ".", "0.3029", ".", "0.2275", ".", ".", ".", ".", "0.2215", "0.2687", ".", "."),
+  check.names = FALSE
+)
+combined_lasso <- cbind(df_lasso_M, spacer, df_lasso_F)
+knitr::kable(combined_lasso, align = "c", caption = "Lasso Regression Coefficients (lambda.1se)")
+```
+
+**AIC (Akaike Information Criterion): **
+In this step, to refine the models and objectively select the most predictive features, a Bidirectional Stepwise Regression (`direction = "both"`) based on the Akaike Information Criterion (AIC) was chosen. The process iteratively added and removed variables to find the optimal balance between model fitness and complexity, without overfitting. As a result, for males, we obtained height, abdomen, age, and wrist as variables. For females, we obtained height, abdomen, hip, and knee. In the next step, we will test interaction terms and see if we can achieve further improvement.
+
+```{r regression-summary-table, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
 library(stargazer)
-# 直接把你的三個模型丟進去
-stargazer(model_1_ols_all, model_2_robust, model_3_ols_clean, 
-          type = "text",                  # 如果是在 Console 看，用 "text"；輸出報告建議用 "html" 或 "latex"
-          title = "敏感度分析：模型係數比較表",
-          column.labels = c("包含39(OLS)", "包含39(Robust)", "剔除39(OLS)"),
-          digits = 3,                     # 小數點位數
-          model.names = FALSE,            # 隱藏預設的模型名稱
-          dep.var.labels = "體脂率 (%)",   # 設定應變數標籤
-          covariate.labels = c("身高", "腹圍", "年齡", "手腕", "截距")) # 設定變數名稱
+
+df_final_check_M <- df %>% filter(sex == "M") %>% select(c("fat_percent", "height", "abdomen", "age", "wrist"))
+df_final_check_F <- df %>% filter(sex == "F") %>% select(c("fat_percent", "height", "abdomen", "biceps", "hip", "knee"))
+
+full_model_M <- lm(fat_percent ~ ., data = df_final_check_M)
+step_model_M <- step(full_model_M, direction = "both", trace = 0)
+full_model_F <- lm(fat_percent ~ ., data = df_final_check_F)
+step_model_F <- step(full_model_F, direction = "both", trace = 0)
+
+stargazer(step_model_M, step_model_F,
+          type = "latex",
+          header = FALSE,
+          title = "Stepwise Regression Models Comparison (AIC Selected)",
+          column.labels = c("Male", "Female"),
+          dep.var.labels = "Body Fat Percentage",
+          model.names = FALSE,
+          font.size = "footnotesize",
+          table.placement = "H",
+          no.space = TRUE,
+          float = TRUE,
+          float.env = "table")
 ```
+
+
+**Complexity Assessment: Interaction and ANOVA**
+To ensure the models capture the physiological relationships between predictors, interaction terms were taken into the formula (e.g., height * abdomen for males, height * hip for females). The null hypothesis ($H_0$) was that the impact of specific girth measurements on body fat might depend on an individual's height. To evaluate whether this added complexity was justified, an Analysis of Variance (ANOVA) was performed. The results showed non-significant p-values for both the male ($F = 1.647$, $p = 0.201$) and female ($F = 1.441$, $p = 0.232$) datasets. Consequently, based on the principle of parsimony, we rejected the complex models and retained the simpler versions.
+
+```{r anova-interaction-summary, echo=FALSE}
+library(kableExtra)
+df_anova <- data.frame(
+  `Sex` = c("Male", "Female"),
+  `Interaction Term Tested` = c("height * abdomen", "height * hip"),
+  `Base Model RSS` = c(4516.2, 2161.9),
+  `Interaction Model RSS` = c(4486.1, 2144.6),
+  `F-Statistic` = c(1.647, 1.441),
+  `P-value` = c("0.201", "0.232"),
+  check.names = FALSE
+)
+
+knitr::kable(df_anova, align = "c", caption = "ANOVA Results for Interaction Terms Assessment")
+```
+
+### Stage 3: Regression Diagnostics
+In this section, I examined both models with regression diagnostics to ensure the reliability of the models. Due to page limitations, I will only show the final plots after tuning. The first plot, `Residuals vs Fitted`, displayed no obvious patterns or curvature for the female model, but showed a slight downward trend for the male model. This might be due to the data sparsity at the tails. For the`Scale-Location` plot, both models generally satisfy the homoscedasticity assumption. The male trend appeared almost horizontal, while a minor bump appeared in the female plot. This might be due to either data sparsity or biological structure (womb, or the tendency for female body fat to appear specifically at the abdomen), making it hard to precisely predict female body fat at low levels. For the `Normal Q-Q` plot, both aligned closely with the 45-degree reference line, showing that most errors follow the normal distribution. Finally, for the `Residuals vs Leverage` plot, after removing some outliers based on outlier detection, the plot appears clean, and no observations exceed the Cook's distance thresholds. I will discuss the outlier detection in the next section.
+
+
+```{r diagnostic-all-8, echo=FALSE, fig.width=14, fig.height=8, fig.align="center", out.width="100%", fig.cap="Regression Diagnostics Plot"}
+
+model_simple_M <- lm(fat_percent ~ height + abdomen + age + wrist, data = df_final_check_M[-c(39,42,182),])
+model_simple_F <- lm(fat_percent ~ height + abdomen + hip + knee, data = df_final_check_F)
+
+
+layout(matrix(c(1,3,2,4,5,7,6,8), nrow=2))
+par(mar = c(4, 4, 2, 1), oma = c(0, 0, 3, 0))
+
+plot(model_simple_M, sub.caption = "")
+plot(model_simple_F, sub.caption = "")
+
+mtext("Male Model",   outer = TRUE, side = 3, line = 1, font = 2, cex = 1.1, adj = 0.25)
+mtext("Female Model", outer = TRUE, side = 3, line = 1, font = 2, cex = 1.1, adj = 0.75)
+```
+
+### Stage 4: Sensitivity Analysis
+In this section, I mainly focus on detecting outliers in the male dataset, due to the significant abnormal results I obtained from the initial male regression diagnostics. After some measurements, I decided to remove those outliers from the training set. The first include `ID 367` with 0% body fat and `ID 227` which has 75 cm of height; I believe these are due to missing data and a typo. After that, the studentized residuals flagged `ID 224` as a distinct outlier, exceeding the standard threshold of $|r| > 3$. The Cook's Distance plot revealed that `ID 224` and `ID 227` were exceptionally conspicuous; even though both of them did not exceed the threshold of $D_i > 1$, they still exerted substantial leverage that pulled the regression line. Based on the analysis, I decided to remove `224, 227`, and `367` from the male training set.
+
+```{r outliers-male-summary, echo=FALSE}
+df_outliers <- data.frame(
+  `ID` = c(224,227, 367),
+  `fat_percent` = c(34.5, 32.3, 0.0),
+  `height` = c(184, 75, 173),
+  `abdomen` = c(148.1, 104.3, 69.4),
+  `age` = c(46, 44, 40),
+  `wrist` = c(21.4, 17.4, 16.5),
+  check.names = FALSE
+)
+
+knitr::kable(df_outliers, align = "c", caption = "Identified Extreme Outliers")
+```
+
+### Stage 5: Prediction Intervals
+Finally, I calculated prediction intervals (PI) for utility assessment. If the final formulas for both sexes appear to have a high RSE, it means they will result in a wide interval of individual uncertainty. That makes the formulas less reliable. But how do we differentiate whether I built a terrible model or reached the limit of this specific dataset? Therefore, I tried several different ways to test the limit for both sexes. Eventually, we stuck with the baseline versions for both models, with `RSE = 4.109` for males and `RSE = 3.475` for females, since they offer a linear and simple way to deliver results while maintaining a low RSE in comparison.
+
+```{r model-comparison-tables, echo=FALSE, message=FALSE, warning=FALSE}
+library(kableExtra)
+df_M_re <- df %>% filter(sex == "M") %>% select(-(c("sex", "study", "bmi")))
+df_M_re$height <- df_M_re$height * 100
+
+model_simple_M <- lm(fat_percent ~ height + abdomen + age + wrist, data = df_M_re[-c(39,42,182),])
+model_with_chest_M <- lm(fat_percent ~ height + abdomen + chest + age + wrist,data = df_M_re[-c(39,42,182),])
+model_with_weight_M <- lm(fat_percent ~ height + abdomen + age + wrist + weight, data = df_M_re[-c(39,42,182),])
+model_more_interaction_M <- lm(fat_percent ~ abdomen * height + neck * height + weight * height, data = df_M_re[-c(39,42,182),])
+model_advanced_M_M <- lm(fat_percent ~ poly(abdomen, 2) + height + age + wrist + abdomen:height, data = df_final_check_M[-c(39,42,182),])
+model_advanced_M_log <- lm(log(fat_percent) ~ poly(abdomen, 2) + height + age + wrist + abdomen:height, data = df_M_re[-c(39,42,182),])
+pi_ad_M <- predict(model_advanced_M_log, newdata = df_M_re[-c(39,42,182),], interval = "prediction", level = 0.95)
+pi_normal <- exp(pi_ad_M)
+df_M <- cbind(df_M_re[-c(39,42,182),], pi_normal)
+df_M$margin_error <- round(((df_M$upr - df_M$lwr) / 2), 3)
+mean_me_log_M <- mean(df_M$margin_error, na.rm = TRUE) / 2
+model_all_M <- lm(fat_percent ~ weight + height + age + abdomen + ankle + biceps + 
+                  calf + chest + elbow + forearm + hip + knee + neck + thigh + wrist, 
+                data = df_M_re[-c(39,42,182),])
+
+df_F_re <- df %>% filter(sex == "F") %>% select(-(c("sex", "study", "bmi")))
+df_F_re$height <- df_F_re$height * 100
+
+model_simple_F <- lm(fat_percent ~ height + abdomen + hip + knee, data = df_F_re)
+model_with_chest_F <- lm(fat_percent ~ height + abdomen + chest + hip + knee,data = df_F_re)
+model_with_weight_F <- lm(fat_percent ~ height + abdomen + hip + knee + weight, data = df_F_re)
+model_more_interaction_F <- lm(fat_percent ~ abdomen * height + neck * height + weight * height, data = df_F_re)
+model_advanced_M <- lm(fat_percent ~ poly(abdomen, 2) + height + hip + knee + abdomen:height, data = df_F_re)
+model_advanced_M_log <- lm(log(fat_percent) ~ poly(abdomen, 2) + height + hip + knee + abdomen:height, data = df_F_re)
+pi_ad_M <- predict(model_advanced_M_log, newdata = df_F_re, interval = "prediction", level = 0.95)
+pi_normal <- exp(pi_ad_M)
+df_F <- cbind(df_F_re, pi_normal)
+df_F$margin_error <- round(((df_F$upr - df_F$lwr) / 2), 3)
+mean_me_log_M <- mean(df_F$margin_error, na.rm = TRUE) / 2
+model_all_F <- lm(fat_percent ~ weight + height + age + abdomen + ankle + biceps + 
+                  calf + chest + elbow + forearm + hip + knee + neck + thigh + wrist, 
+                data = df_F_re)
+male_table <- data.frame(
+  Model = c(
+    "Base: height + abdomen + age + wrist",
+    "Add chest: height + abdomen + chest + age + wrist",
+    "Add weight: height + abdomen + age + wrist + weight",
+    "Interaction: abdomen×height + neck×height + weight×height",
+    "Poly: poly(abdomen,2) + height + age + wrist + abdomen:height",
+    "Log-Poly: log(fat) ~ poly(abdomen,2) + height + age + wrist + abdomen:height",
+    "Kitchen Sink: all predictors"
+  ),
+  RSE = c(
+    summary(model_simple_M)$sigma,
+    summary(model_with_chest_M)$sigma,
+    summary(model_with_weight_M)$sigma,
+    summary(model_more_interaction_M)$sigma,
+    summary(model_advanced_M_M)$sigma,
+    5.912797,
+    summary(model_all_M)$sigma
+  )
+)
+
+female_table <- data.frame(
+  Model = c(
+    "Base: height + abdomen + hip + knee",
+    "Add chest: height + abdomen + chest + hip + knee",
+    "Add weight: height + abdomen + hip + knee + weight",
+    "Interaction: abdomen×height + neck×height + weight×height",
+    "Poly: poly(abdomen,2) + height + hip + knee + abdomen:height",
+    "Log-Poly: log(fat) ~ poly(abdomen,2) + height + hip + knee + abdomen:height",
+    "Kitchen Sink: all predictors"
+  ),
+  RSE = c(
+    summary(model_simple_F)$sigma,
+    summary(model_with_chest_F)$sigma,
+    summary(model_with_weight_F)$sigma,
+    summary(model_more_interaction_F)$sigma,
+    summary(model_advanced_M)$sigma,
+    5.918534,
+    summary(model_all_F)$sigma
+  )
+)
+
+male_table$RSE   <- round(male_table$RSE, 3)
+female_table$RSE <- round(female_table$RSE, 3)
+
+knitr::kable(male_table, 
+             col.names = c("Model Description", "RSE (sigma)"),
+             caption = "Male Model Comparison by RSE (sigma)",
+             booktabs = TRUE,
+             align = c("l", "c")) %>%
+  kable_styling(latex_options = c("hold_position", "scale_down"),
+                font_size = 9) %>%
+  column_spec(1, width = "11cm") %>%
+  row_spec(1, bold = TRUE)
+
+knitr::kable(female_table,
+             col.names = c("Model Description", "RSE (sigma)"),
+             caption = "Female Model Comparison by RSE (sigma)",
+             booktabs = TRUE,
+             align = c("l", "c")) %>%
+  kable_styling(latex_options = c("hold_position", "scale_down"),
+                font_size = 9) %>%
+  column_spec(1, width = "11cm") %>%
+  row_spec(1, bold = TRUE)
+```
+
+
+## III. Data Prediction
+The results for the six data points are shown in the table below. As we can see in Figure 4 below, the predicted body fat value for each data point mostly aligns with the abdomen, but in the case of males, we can clearly see that the plot shows a severe off-cluster for height, age, and wrist. To dive deeper to reveal the reason, we have to look at the standard deviation of each dot in the entire dataset. For the most abnormal dots, P3 (-2.748% body fat) and P4 (55.668% body fat), we obtained P3 with -3.76σ at the abdomen and -4.85σ at the wrist, and P4 with +5.35σ at the abdomen and +2.22σ at the wrist.
+
+The reason for getting a negative body fat value on P3 is mainly based on the small girth of the abdomen, which is actually the smallest abdominal value if we compare it with the training set. And this lacks the leverage to provide a sufficient positive value based on the formula, eventually leading to a negative body fat percentage. For P4, it is completely the opposite, having the largest girth on the abdomen which offers a strong positive number; even though P4 has high values for height and wrist, they still cannot offset the high value we got on the abdomen, eventually leading to an unreasonable 55% body fat.
+
+```{r prediction-results-table, echo=FALSE, message=FALSE, warning=FALSE}
+library(knitr)
+library(kableExtra)
+library(dplyr)
+
+df_without_bf <- read.csv("data/examdata2.csv")
+df_without_bf$height <- df_without_bf$height * 100
+df_without_bf_M <- df_without_bf %>% filter(sex == "M") %>% select(-c("study", "sex"))
+df_without_bf_F <- df_without_bf %>% filter(sex == "F") %>% select(-c("study", "sex"))
+
+df_train <- read.csv("data/examdata.csv")
+df_train$height <- df_train$height * 100
+
+df_M_train <- df_train %>% filter(sex == "M") %>% select(-c("study", "sex", "bmi"))
+df_F_train <- df_train %>% filter(sex == "F") %>% select(-c("study", "sex", "bmi"))
+
+model_simple_M <- lm(fat_percent ~ height + abdomen + age + wrist, 
+                     data = df_M_train[-c(39, 42, 182), ])
+model_simple_F <- lm(fat_percent ~ height + abdomen + hip + knee, 
+                     data = df_F_train)
+
+pred_4_points <- predict(model_simple_M, newdata = df_without_bf_M)
+pred_2_points <- predict(model_simple_F, newdata = df_without_bf_F)
+
+pred_combined <- bind_rows(
+  df_without_bf_M %>% mutate(sex = "M", predicted = round(pred_4_points, 3)),
+  df_without_bf_F %>% mutate(sex = "F", predicted = round(pred_2_points, 3))
+)
+pred_combined <- bind_rows(
+  df_without_bf_M %>% mutate(sex = "M", 
+                              predicted    = round(pred_4_points, 3),
+                              margin_error = c(8.214, 8.201, 8.541, 8.730)),
+  df_without_bf_F %>% mutate(sex = "F", 
+                              predicted    = round(pred_2_points, 3),
+                              margin_error = c(6.941, 6.910))
+)
+pred_display <- pred_combined %>% select(sex, abdomen, height, weight, age, wrist, hip, knee, predicted, margin_error) %>%
+  mutate(`Temp Label` = paste0("P", row_number())) %>%
+  select(`Temp Label`, everything())
+
+knitr::kable(pred_display,
+             col.names = c("Temp Label","Sex", "Abdomen", "Height", "Weight","Age",
+                           "Wrist", "Hip", "Knee", "Predicted (%)", "Margin Error"),
+             digits = 3,
+             align = "c",
+             caption = "Model Body Fat Predictions on New Observations",
+             booktabs = TRUE) %>%
+  kable_styling(latex_options = c("hold_position", "scale_down"),
+                full_width = FALSE,
+                font_size = 8)
+```
+
+```{r prediction-plots, echo=FALSE, out.width="49%", fig.show="hold", fig.pos="H", fig.align="center", fig.cap="Partial Variables with Predictions Plots"}
+knitr::include_graphics(c(
+  "plot/M_prediction_4plot.png",
+  "plot/F_prediction_4plot.png"
+))
+```
+
+
+## IV. Conclusion
+In this project, I tried to build two separate formulas for males and females for body fat prediction, using only four measurements. And I discovered that the abdomen for both sexes acts as the anchor variable, which takes the most significant role. However, there is a clear limitation to the maximum accuracy I can achieve based on this dataset. Especially regarding the prediction intervals, with roughly 8% for males and 6% for females, this error margin is considered wide. And due to the lack of data on both super high and super low body fat, the models are performing poorly on those extreme predictions.
+
+To sum up, it is possible to predict body fat based on a combination of tape measurements, but to achieve a higher accuracy, we might need more data to properly train the model, especially on both extreme tails.
+
+## References
+
+Kutner, M. H., Nachtsheim, C. J., Neter, J., & Li, W. (2004). *Applied Linear Statistical Models* (5th ed.). McGraw-Hill Irwin.

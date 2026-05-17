@@ -73,138 +73,10 @@ model_M <- lm(fat_percent ~ abdomen + chest + hip, data = df_M)
 summary(model_M)
 # Multiple R-squared:  0.6995,    Adjusted R-squared:  0.6959 
 
-
-'''
-在您的報告中，您可以結合上述兩點來「捍衛」您的決策：
-統計檢定量化 (基於 0319.pdf)：
-您可以提到：「我們執行了 F-檢定（ANOVA），比較了合併模型與包含性別交互作用的模型（其統計意義等同於分開建模）。結果顯示 P 值 < 0.05，證明性別在預測體脂率上存在顯著的斜率差異，不支持全體合併 (Full Pooling)」
-。
-殘差視覺證據 (基於 0312.pdf)：
-展示合併模型的殘差圖並說明：「在合併模型中，殘差呈現明顯的群體偏差（例如男性點位普遍被低估），這違反了殘差應隨機分佈的假設，因此我們採取 不合併 (No Pooling) 的策略，為男女各建立一套公式」
-。
-引用教授的策略：
-教授提到：「建模是一個迭代過程：擬合 → 診斷 → 比較」
-。您的流程（先跑合併模型 → 發現殘差有問題/F-檢定顯著 → 決定分開建立）完全符合課程中強調的 「迭代建模精神」。
-'''
-
 # ==============================================================================
 # STEP 2.1: LASSO, we have to fix the Multicollinearity, and place this process before AIC
+# ** vif + lasso + vif, i almost rebuild all the stuff......
 # ==============================================================================
-
-# ** 初步使用LASSO
-# 這邊要作一次包含 bmi 但是沒人被踢掉。
-# however, this shouldn't happened, since we can definitely sure bmi is multicollinearity
-# 於是下面剔除 bmi 但是更怪了 M/F 都怪
-# 這邊要論證，F 這邊增加一公分身高，體脂肪增加 181.07371515 %
-
-# ==============================================================================
-df_with_bg_variable_M <- df %>% filter(sex == "M") %>% select(-(c("sex", "study", "bmi")))
-x <- model.matrix(fat_percent ~ ., data = df_with_bg_variable_M)[, -1] 
-y <- df_with_bg_variable_M$fat_percent
-
-lasso_model <- cv.glmnet(x, y, alpha = 1)
-coef(lasso_model, s = "lambda.min")
-
-# 17 x 1 sparse Matrix of class "dgCMatrix"
-#               lambda.min
-# (Intercept) -5.454104725
-# weight      -0.004484128
-# height      -6.190508712
-# bmi          .          
-# age          0.060405441
-# abdomen      0.693471258
-# ankle        .          
-# biceps       .          
-# calf         .          
-# chest        .          
-# elbow        .          
-# forearm      0.231254193
-# hip         -0.009026770
-# knee         .          
-# neck        -0.260113124
-# thigh        .          
-# wrist       -1.472578300
-
-
-df_with_bg_variable_F <- df %>% filter(sex == "F") %>% select(-(c("sex", "study", "bmi")))
-x <- model.matrix(fat_percent ~ ., data = df_with_bg_variable_F)[, -1] 
-y <- df_with_bg_variable_F$fat_percent
-
-lasso_model <- cv.glmnet(x, y, alpha = 1)
-coef(lasso_model, s = "lambda.min")
-# 16 x 1 sparse Matrix of class "dgCMatrix"
-#                lambda.min
-# (Intercept) -401.46755383
-# weight        -2.71334239
-# height       181.07371515
-# age            1.29729600
-# abdomen        0.07934044
-# ankle         -0.20800559
-# biceps        -4.94046570
-# calf          -0.02888173
-# chest          2.25738680
-# elbow          0.14716864
-# forearm       -0.15748825
-# hip           -4.97024839
-# knee          -7.93800592
-# neck          -0.22740700
-# thigh         16.79720467
-# wrist          0.01827661
-
-# ==============================================================================
-# ** 下面做了兩個改變，一個是增加了剔除的col，一個是增加到剔除 1se
-# 但是F 還是很頑固，沒有東西被踢掉
-
-df_with_bg_variable_M_pure <- df %>% filter(sex == "M") %>% select(-(c("sex", "study", "weight", "height", "bmi")))
-x <- model.matrix(fat_percent ~ ., data = df_with_bg_variable_M_pure)[, -1] 
-y <- df_with_bg_variable_M_pure$fat_percent
-
-lasso_model <- cv.glmnet(x, y, alpha = 1)
-coef(lasso_model, s = "lambda.1se")
-# 14 x 1 sparse Matrix of class "dgCMatrix"
-#               lambda.1se
-# (Intercept) -16.38955933
-# age           0.05688074
-# abdomen       0.64707284
-# ankle         .         
-# biceps        .         
-# calf          .         
-# chest         .         
-# elbow         .         
-# forearm       .         
-# hip           .         
-# knee          .         
-# neck         -0.05072047
-# thigh         .         
-# wrist        -1.37590129
-
-df_with_bg_variable_F_pure <- df %>% filter(sex == "F") %>% select(-(c("sex", "study", "weight", "height", "bmi")))
-x <- model.matrix(fat_percent ~ ., data = df_with_bg_variable_F_pure)[, -1] 
-y <- df_with_bg_variable_F_pure$fat_percent
-
-lasso_model <- cv.glmnet(x, y, alpha = 1)
-coef(lasso_model, s = "lambda.1se")
-# 14 x 1 sparse Matrix of class "dgCMatrix"
-#               lambda.1se
-# (Intercept) -25.94129773
-# age           0.05433343
-# abdomen       0.17345232
-# ankle        -0.49010072
-# biceps       -0.29752833
-# calf         -0.03402037
-# chest         0.18034981
-# elbow         .         
-# forearm      -0.16761921
-# hip          -0.39266951
-# knee         -0.60745006
-# neck         -0.12244962
-# thigh         2.03422185
-# wrist        -0.70977089
-
-# ==============================================================================
-# ** vif + lasso + vif, 這邊幾乎重做了
-# ==============================================================================
-
 df_with_bg_variable_M <- df %>% filter(sex == "M") %>% select(-(c("sex", "weight", "elbow", "calf", "study", "bmi")))
 full_model_M <- lm(fat_percent ~ ., data = df_with_bg_variable_M)
 vif(full_model_M)
@@ -386,7 +258,6 @@ par(mfrow = c(1, 1), oma = c(0, 0, 0, 0))
 
 # ==============================================================================
 # STEP 3.2: Sensitivity Analysis
-#           !  這邊要多作一個 PI
 # ==============================================================================
 outlierTest(model_simple_M)
 #     rstudent unadjusted p-value Bonferroni p
@@ -399,7 +270,7 @@ print(outliers)
 # 39 
 
 cooksd <- cooks.distance(model_simple_M)
-plot(cooksd, type="h", main="庫克距離 (影響力檢測)")
+plot(cooksd, type="h")
 abline(h = 0.3, col="red", lty=2)
 
 # r$> df_final_check_M[39, ]
@@ -409,7 +280,8 @@ abline(h = 0.3, col="red", lty=2)
 # r$> df_final_check_M[42, ]
 #    fat_percent height abdomen age wrist
 # 42        32.3     75   104.3  44  17.4
-
+#     fat_percent height abdomen age wrist
+# 182           0    173    69.4  40  16.5
 
 
 outlierTest(model_simple_F)
@@ -433,13 +305,14 @@ abline(h = 4/length(cooksd), col="red", lty=2)
 model_1_ols_all <- lm(fat_percent ~ height + abdomen + age + wrist, data = df_final_check_M[-c(42), ])
 model_2_robust <- rlm(fat_percent ~ height + abdomen + age + wrist, data = df_final_check_M[-c(42), ])
 model_3_ols_clean <- lm(fat_percent ~ height + abdomen + age + wrist, data = df_final_check_M[-c(39,42), ])
+model_3_ols_clean <- lm(fat_percent ~ height + abdomen + age + wrist, data = df_final_check_M[-c(39,42), ])
 
 cbind(
-  "1. 包含39(被拉歪)" = coef(model_1_ols_all),
-  "2. 包含39(rlm降權)" = coef(model_2_robust),
-  "3. 剔除39(純淨)" = coef(model_3_ols_clean))
+  "1. with 39" = coef(model_1_ols_all),
+  "2. with 39 rlm" = coef(model_2_robust),
+  "3. no 39" = coef(model_3_ols_clean))
 
-#             1. 包含39(被拉歪) 2. 包含39(rlm降權) 3. 剔除39(純淨)
+#                       1. with 39 2. with 39 rlm 3. no 39
 # (Intercept)        6.11892734         6.24177912      3.75218257
 # height            -0.11533985        -0.12673267     -0.12571297
 # abdomen            0.70556656         0.72873414      0.74278610
@@ -447,25 +320,19 @@ cbind(
 # wrist             -1.89588662        -1.89202774     -1.82628310
 
 
-
-
 pct_change <- (coef(model_3_ols_clean) - coef(model_1_ols_all)) / coef(model_1_ols_all) * 100
 round(pct_change, 2)
 # (Intercept)      height     abdomen         age       wrist 
 #      -38.68        8.99        5.28      -14.96       -3.67 
 
-# 比較 Residual Standard Error (RSE, 模型的平均預測誤差)
-# 數字越小代表預測越精準
-c("包含39號的誤差 (RSE)" = sigma(model_1_ols_all),
-  "剔除39號的誤差 (RSE)" = sigma(model_3_ols_clean))
+c("with 39 RSE" = sigma(model_1_ols_all),
+  "no 39 RSE" = sigma(model_3_ols_clean))
 
-# 比較 Adjusted R-squared (模型的解釋力)
-# 數字越大代表模型越好
-c("包含39號的 Adj R2" = summary(model_1_ols_all)$adj.r.squared,
-  "剔除39號的 Adj R2" = summary(model_3_ols_clean)$adj.r.squared)
-# 包含39號的誤差 (RSE) 剔除39號的誤差 (RSE) 
+c("with 39 Adj R2" = summary(model_1_ols_all)$adj.r.squared,
+  "no 39 Adj R2" = summary(model_3_ols_clean)$adj.r.squared)
+# with 39 RSE no 39 RSE 
 #             4.269580             4.115877 
-# 包含39號的 Adj R2 剔除39號的 Adj R2 
+# with 39 Adj R2 no 39 Adj R2 
 #         0.7174023         0.7344574 
 
 confint(model_1_ols_all)["abdomen", ]
@@ -536,9 +403,6 @@ confint(boot_results_F, type = "perc")
 # ==============================================================================
 # STEP 4.1 : prediction and result
 # ==============================================================================
-
-select <- dplyr::select
-
 df_without_bf <- read.csv("data/examdata2.csv")
 df_without_bf$height <- df_without_bf$height * 100
 
@@ -554,18 +418,14 @@ pred_2_points <- predict(model_simple_F, newdata = df_without_bf_F)
 #        1        2 
 # 15.05497 19.77243 
 
-df_final_check_M
+pred_combined <- bind_rows(
+  df_without_bf_M %>% mutate(sex = "M", predicted = round(pred_4_points, 3)),
+  df_without_bf_F %>% mutate(sex = "F", predicted = round(pred_2_points,3))
+)
 
 df_final_check_M[df_final_check_M$fat_percent < 10, ]
 df_final_check_M[df_final_check_M$abdomen < 70, ]
-# 
-# library(stargazer)
-# stargazer(model_3_ols_clean, 
-#           type = "text",             # Console 觀看用 "text"，寫報告用 "html"
-#           title = "最終體脂率預測模型：男性組",
-#           dep.var.labels = "體脂率 (%)",
-#           covariate.labels = c("身高", "腹圍", "年齡", "手腕", "截距"),
-#           digits = 3) # 也可以直接匯出成檔案
+
 
 # ==============================================================================
 # STEP 4.2 : prediction plot
@@ -601,14 +461,8 @@ for (i in 1:4) {
   text(df_without_bf_M[[v]], pred_4_points,
        labels = paste0("P", seq_along(pred_4_points), ": ", round(pred_4_points, 1), "%"),
        col = "red", pos = 3, font = 2, cex = 0.8)
-# 假設你已經跑完 plot() 並畫好了紅點
-# 畫出垂直的預測區間線 (以 Abdomen 那張圖為例)
-    arrows(df_without_bf_M$abdomen, pi_check[,"lwr"], 
-        df_without_bf_M$abdomen, pi_check[,"upr"], 
-        code = 3, angle = 90, length = 0.05, col = "red")
 }
 dev.off()
-
 
 
 # ==============================================================================
@@ -647,9 +501,7 @@ for (i in 1:4) {
        labels = paste0("P", seq_along(pred_2_points), ": ", round(pred_2_points, 1), "%"),
        col = "red", pos = 3, font = 2, cex = 0.8)
 }
-
 dev.off()
-
 
 
 # the distribution plot for Male on 4 different coefficients, plot by claude
@@ -734,17 +586,14 @@ for (i in seq_along(predictors)) {
 par(mfrow = c(1, 1))
 # ==============================================================================
 # STEP 4.3 : Prediction Interval
-#           這邊的問題是 PI 都太高男生到8 ，女生到7
 # ==============================================================================
-pi_check <- predict(model_3_ols_clean, newdata = df_without_bf_M, interval = "prediction", level = 0.95)
+pi_check <- predict(model_simple_M, newdata = df_without_bf_M, interval = "prediction", level = 0.95)
 df_4_points_with_pi <- cbind(df_without_bf_M, pi_check)
-df_4_points_with_pi$margin_error <- round(((df_4_points$upr - df_4_points$lwr) / 2), 3)
+df_4_points_with_pi$margin_error <- round(((df_4_points_with_pi$upr - df_4_points_with_pi$lwr) / 2), 3)
 
-pi_M_check <- predict(model_3_ols_clean, newdata = df_final_check_M, interval = "prediction", level = 0.95)
+pi_M_check <- predict(model_simple_M, newdata = df_final_check_M, interval = "prediction", level = 0.95)
 df_M_with_pi <- cbind(df_final_check_M, pi_M_check)
 df_M_with_pi$margin_error <- round(((df_M_with_pi$upr - df_M_with_pi$lwr) / 2), 3)
-
-
 
 pi_check <- predict(model_simple_F, newdata = df_without_bf_F, interval = "prediction", level = 0.95)
 df_2_points_with_pi <- cbind(df_without_bf_F, pi_check)
@@ -755,53 +604,74 @@ df_F_with_pi <- cbind(df_final_check_F, pi_F_check)
 df_F_with_pi$margin_error <- round(((df_F_with_pi$upr - df_F_with_pi$lwr) / 2), 3)
 
 
-
 # ==============================================================================
 # STEP 4.4 : Refactor, fix the PI, or try to prove the data is not good enough to have result better.
 # ==============================================================================
-model_advanced_M <- lm(log(fat_percent) ~ poly(abdomen, 2) + height + age + wrist + abdomen:height, data = df_final_check_M[-c(39,24,182),])
 
 df_M_re <- df %>% filter(sex == "M") %>% select(-(c("sex", "study", "bmi")))
+df_M_re$height <- df_M_re$height * 100
 
-model_with_chest <- lm(fat_percent ~ abdomen + chest + age + wrist,data = df_M_re)
 
-model_simple_dii <- lm(fat_percent ~ height + abdomen + age + wrist + weight, data = df_M_re[-c(39,24,182),])
-# 4.103607
-model_simple_M <- lm(fat_percent ~ height + abdomen + age + wrist, data = df_M_re[-c(39,24,182),])
-# 4.111005
-model_simple_t <- lm(fat_percent ~ abdomen * height + neck * height + weight * height, data = df_M_re[-c(39,24,182),])
-# 4.157122
-model_advanced_M <- lm(fat_percent ~ poly(abdomen, 2) + height + age + wrist + abdomen:height, data = df_final_check_M[-c(39,24,182),])
-# 4.100556
+model_simple_M <- lm(fat_percent ~ height + abdomen + age + wrist, data = df_M_re[-c(39,42,182),])
+# 4.108717
+model_with_chest_M <- lm(fat_percent ~ height + abdomen + chest + age + wrist,data = df_M_re[-c(39,42,182),])
+# 4.151072
+model_with_weight_M <- lm(fat_percent ~ height + abdomen + age + wrist + weight, data = df_M_re[-c(39,42,182),])
+# 4.114175
+model_more_interaction_M <- lm(fat_percent ~ abdomen * height + neck * height + weight * height, data = df_M_re[-c(39,42,182),])
+# 4.176986
+model_advanced_M_M <- lm(fat_percent ~ poly(abdomen, 2) + height + age + wrist + abdomen:height, data = df_final_check_M[-c(39,42,182),])
+# 4.079906
 
-model_all <- lm(fat_percent ~ weight + height + age + abdomen + ankle + biceps + 
+model_advanced_M_log <- lm(log(fat_percent) ~ poly(abdomen, 2) + height + age + wrist + abdomen:height, data = df_M_re[-c(39,42,182),])
+pi_ad_M <- predict(model_advanced_M_log, newdata = df_M_re[-c(39,42,182),], interval = "prediction", level = 0.95)
+pi_normal <- exp(pi_ad_M)
+df_M <- cbind(df_M_re[-c(39,42,182),], pi_normal)
+df_M$margin_error <- round(((df_M$upr - df_M$lwr) / 2), 3)
+mean_me_log_M <- mean(df_M$margin_error, na.rm = TRUE) / 2
+# 5.912797
+model_all_M <- lm(fat_percent ~ weight + height + age + abdomen + ankle + biceps + 
                   calf + chest + elbow + forearm + hip + knee + neck + thigh + wrist, 
-                data = df_M_re[-c(39,24,182),])
-# 4.0819
+                data = df_M_re[-c(39,42,182),])
+# 4.099424
+
+summary(model_simple_M)$sigma
+
+
+            # ==============================================================================
+# model_simple_F <- lm(fat_percent ~ height + abdomen + hip + knee, data = df_final_check_F)
+df_F_re <- df %>% filter(sex == "F") %>% select(-(c("sex", "study", "bmi")))
+df_F_re$height <- df_F_re$height * 100
+
+
+model_simple_M <- lm(fat_percent ~ height + abdomen + age + wrist, data = df_M_re[-c(39,42,182),])
+
+model_simple_F <- lm(fat_percent ~ height + abdomen + hip + knee, data = df_F_re)
+
+model_with_chest_F <- lm(fat_percent ~ height + abdomen + chest + hip + knee,data = df_F_re)
+
+model_with_weight_F <- lm(fat_percent ~ height + abdomen + hip + kneed + weight, data = df_F_re)
+
+model_more_interaction_F <- lm(fat_percent ~ abdomen * height + neck * height + weight * height, data = df_F_re)
+
+model_advanced_M <- lm(fat_percent ~ poly(abdomen, 2) + height + hip + knee + abdomen:height, data = df_F_re)
+
+model_advanced_M_log <- lm(log(fat_percent) ~ poly(abdomen, 2) + height + hip + knee + abdomen:height, data = df_F_re)
+pi_ad_M <- predict(model_advanced_M_log, newdata = df_F_re, interval = "prediction", level = 0.95)
+pi_normal <- exp(pi_ad_M)
+df_F <- cbind(df_F_re, pi_normal)
+df_F$margin_error <- round(((df_F$upr - df_F$lwr) / 2), 3)
+mean_me_log_M <- mean(df_F$margin_error, na.rm = TRUE) / 2
+
+
+model_all_F <- lm(fat_percent ~ weight + height + age + abdomen + ankle + biceps + 
+                  calf + chest + elbow + forearm + hip + knee + neck + thigh + wrist, 
+                data = df_F_re)
+
 summary(model_with_chest)$sigma
 
 
-pi_ad_M <- predict(model_interaction, newdata = df_final_check_M, interval = "prediction", level = 0.95)
-# pi_normal <- exp(pi_ad_M)
-df_M <- cbind(df_final_check_M, pi_ad_M)
-df_M$margin_error <- round(((df_M$upr - df_M$lwr) / 2), 3)
 
-
-```
-「特徵篩選與理論預測極限之探討」
-「在評估模型的理論預測能力時，必須區分『樣本內誤差 (In-sample Error, RSS)』與『殘差標準誤 ($\hat{\sigma}$)』之本質差異。
-雖然納入所有 15 項皮尺測量變數（Full Model）必定能使 RSS 降至最低，但根據 $\hat{\sigma}$ 之計算公式，引入缺乏解釋力之冗餘變數會消耗模型自由度 (Degrees of Freedom)，進而導致 $\hat{\sigma}$ 受到懲罰而膨脹。
-本研究透過 AIC 資訊準則進行特徵篩選，最終收斂至 4 項核心變數 (height, abdomen, age, wrist)。此篩選過程確保了引入模型的每一個變數，其對殘差的縮減效益皆大於自由度的耗損。
-因此，本精簡模型所呈現之 $\hat{\sigma}$ (4.23%)，並非特徵萃取不足所導致的妥協，而是代表了『僅依賴人體外部測量法推估體脂』的理論極限 (Theoretical Limit)。
-高達 $\pm 8.3\%$ 的預測區間單邊誤差，反映了無法透過線性特徵工程消解的個體自然生理變異（如內臟脂肪分佈差異）。
-這為未來健康應用程式的模型選型提供了明確的邊界：若欲突破此精準度天花板，必須引入非皮尺維度的全新特徵（如體重、影像掃描或生物電阻數據）。」
-```
-
-            # ==============================================================================
-
-model_simple_F <- lm(fat_percent ~ height + abdomen + hip + knee, data = df_final_check_F)
-model_interaction <- lm(fat_percent ~ height + abdomen + hip + knee + (height * hip), data = df_final_check_F)
-anova(model_simple_F, model_interaction)
 # ==============================================================================
 # STEP 5: Other plots
 # ==============================================================================
@@ -839,25 +709,48 @@ with(df_final_check_F, {  plot(hip, fat_percent,
 # ==============================================================================
 # STEP 6: last
 # ==============================================================================
-# lm(formula = fat_percent ~ height + abdomen + age + wrist, data = df_final_check_M[-c(39,42), ])
+# Call:
+# lm(formula = fat_percent ~ height + abdomen + age + wrist, data = df_M_re[-c(39, 
+#     42, 182), ])
 
 # Residuals:
-#     Min      1Q  Median      3Q     Max 
-# -9.9515 -2.9381 -0.3724  3.2470  8.9510 
+#      Min       1Q   Median       3Q      Max 
+# -10.0431  -2.9352  -0.3554   3.1948   8.9104 
 
 # Coefficients:
-#             Estimate Std. Error t value Pr(>|t|)    
-# (Intercept)  3.75218    7.75601   0.484  0.62898    
-# height      -0.12571    0.04566  -2.753  0.00634 ** 
-# abdomen      0.74279    0.03235  22.961  < 2e-16 ***
-# age          0.05255    0.02290   2.295  0.02259 *  
-# wrist       -1.82628    0.39293  -4.648 5.48e-06 ***
+#              Estimate Std. Error t value Pr(>|t|)    
+# (Intercept)   4.57809    7.76623   0.589  0.55608    
+# height      -12.62349    4.55808  -2.769  0.00605 ** 
+# abdomen       0.73881    0.03243  22.785  < 2e-16 ***
+# age           0.05288    0.02286   2.313  0.02156 *  
+# wrist        -1.84590    0.39251  -4.703  4.3e-06 ***
 # ---
 # Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
 
-# Residual standard error: 4.116 on 245 degrees of freedom
-# Multiple R-squared:  0.7387,    Adjusted R-squared:  0.7345 
-# F-statistic: 173.2 on 4 and 245 DF,  p-value: < 2.2e-16
+# Residual standard error: 4.109 on 244 degrees of freedom
+# Multiple R-squared:  0.7347,    Adjusted R-squared:  0.7303 
+# F-statistic: 168.9 on 4 and 244 DF,  p-value: < 2.2e-16
 
-# 「根據多元迴歸模型之結果，在控制腹圍 (abdomen)、年齡 (age) 與手腕圍 (wrist) 保持不變的前提下，身高每增加 1 公分，
-# 預期體脂率會下降 0.12571 個百分點，且此效應在統計上達顯著水準 (p-value = 0.00634)。
+
+
+# r$> summary(model_simple_F)
+# Call:
+# lm(formula = fat_percent ~ height + abdomen + hip + knee, data = df_final_check_F)
+
+# Residuals:
+#      Min       1Q   Median       3Q      Max 
+# -10.0747  -2.2324  -0.0262   2.3619   8.6667 
+
+# Coefficients:
+#              Estimate Std. Error t value Pr(>|t|)    
+# (Intercept) -17.01545    7.61681  -2.234   0.0267 *  
+# height       -0.20488    0.04708  -4.352 2.26e-05 ***
+# abdomen       0.35702    0.06303   5.664 5.81e-08 ***
+# hip           0.34041    0.07960   4.277 3.08e-05 ***
+# knee          0.42419    0.16781   2.528   0.0123 *  
+# ---
+# Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+# Residual standard error: 3.475 on 179 degrees of freedom
+# Multiple R-squared:  0.6503,    Adjusted R-squared:  0.6425 
+# F-statistic: 83.22 on 4 and 179 DF,  p-value: < 2.2e-16
